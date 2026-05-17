@@ -55,6 +55,8 @@ def parse_suricata(file_path):
                 
                 if event_type == 'flow':
                     flow_data = event.get('flow', {})
+                    if not flow_data.get('bytes_toclient'):
+                        continue
                     yield {
                         'type': 'flow',
                         'src': src_ip,

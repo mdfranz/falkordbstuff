@@ -1,4 +1,5 @@
 import json
+import os
 import urllib.request
 from falkordb import FalkorDB
 
@@ -25,7 +26,7 @@ def fetch_all(endpoint):
     return results
 
 def main():
-    db = FalkorDB(host='localhost', port=6379)
+    db = FalkorDB(host=os.getenv('FALKORDB_HOST', 'localhost'), port=int(os.getenv('FALKORDB_PORT', 6379)))
     # Delete existing starwars graph if it exists for a clean start
     try:
         db.select_graph('starwars').delete()

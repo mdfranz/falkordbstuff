@@ -1,4 +1,6 @@
 import argparse
+import os
+import time
 from pathlib import Path
 from falkordb import FalkorDB
 from parsers import parse_suricata, parse_osquery
@@ -6,9 +8,9 @@ from parsers import parse_suricata, parse_osquery
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
-def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, reset=False):
+def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, reset=False, start_from=None):
     try:
-        db = FalkorDB(host='localhost', port=6379)
+        db = FalkorDB(host=os.getenv('FALKORDB_HOST', 'localhost'), port=int(os.getenv('FALKORDB_PORT', 6379)))
         if reset:
             print("Resetting graph 'suricata'...")
             try:
@@ -38,6 +40,13 @@ def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, re
         print(f"No Suricata files found in {DATA_DIR}")
         return
     
+    if start_from:
+        suricata_files = [f for f in suricata_files if f.name >= start_from]
+        if not suricata_files:
+            print(f"No files found at or after '{start_from}'")
+            return
+        print(f"Resuming from {suricata_files[0].name} ({len(suricata_files)} files remaining)")
+
     if limit:
         suricata_files = suricata_files[:limit]
     
@@ -53,6 +62,18 @@ def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, re
         'ja4': [],
         'quic_event': []
     }
+
+    def run_query(graph_obj, query, params, retries=3, delay=5):
+        for attempt in range(retries):
+            try:
+                graph_obj.query(query, params)
+                return
+            except Exception as e:
+                print(f"  Query error (attempt {attempt+1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    time.sleep(delay)
+                else:
+                    print("  Skipping batch after repeated failures.")
 
     def flush_buffers(graph_obj, force=False):
         # 1. Flows — aggregate per (src, dst, proto)
@@ -74,7 +95,7 @@ def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, re
                           r.bytes_toclient = r.bytes_toclient + COALESCE(e.bytes_toclient, 0),
                           r.last_seen = e.timestamp
             """
-            graph_obj.query(query, {'events': buffers['flow']})
+            run_query(graph_obj, query, {'events': buffers['flow']})
             buffers['flow'] = []
 
         if flow_only:
@@ -98,7 +119,7 @@ def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, re
             ON MATCH SET  r.count = r.count + 1,
                           r.last_seen = e.timestamp
             """
-            graph_obj.query(query, {'events': buffers['dns_query']})
+            run_query(graph_obj, query, {'events': buffers['dns_query']})
             buffers['dns_query'] = []
 
         # 3. DNS Answers (already idempotent via MERGE)
@@ -110,7 +131,7 @@ def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, re
             ON CREATE SET ip.name = e.address
             MERGE (hn)-[:RESOLVES_TO {resolver_ip: e.resolver}]->(ip)
             """
-            graph_obj.query(query, {'events': buffers['dns_answer']})
+            run_query(graph_obj, query, {'events': buffers['dns_answer']})
             buffers['dns_answer'] = []
 
         # 4. HTTP / TLS / QUIC Hostname Observations — aggregate per (hn, dst, source)
@@ -129,7 +150,7 @@ def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, re
                 ON MATCH SET  r.count = r.count + 1,
                               r.last_seen = e.timestamp
                 """
-                graph_obj.query(query, {'events': buffers[source]})
+                run_query(graph_obj, query, {'events': buffers[source]})
                 buffers[source] = []
 
         # 5. JA4 and Server Fingerprints
@@ -166,7 +187,7 @@ def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, re
             ON CREATE SET sr.count = 1, sr.first_seen = e.timestamp, sr.last_seen = e.timestamp
             ON MATCH SET sr.count = sr.count + 1, sr.last_seen = e.timestamp
             """
-            graph_obj.query(query, {'events': buffers['ja4']})
+            run_query(graph_obj, query, {'events': buffers['ja4']})
             buffers['ja4'] = []
 
     for file_path in suricata_files:
@@ -233,14 +254,16 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=1000)
     parser.add_argument("--limit", type=int, help="Limit the number of Suricata files to process.")
     parser.add_argument("--reset", action="store_true", help="Delete the existing graph before ingesting.")
+    parser.add_argument("--start-from", type=str, help="Skip files before this filename (e.g. eve-2026-01-25-01.json).")
     return parser.parse_args()
 
 if __name__ == "__main__":
     args = parse_args()
     main(
-        include_osquery=args.include_osquery, 
-        flow_only=args.flow_only, 
+        include_osquery=args.include_osquery,
+        flow_only=args.flow_only,
         batch_size=args.batch_size,
         limit=args.limit,
-        reset=args.reset
+        reset=args.reset,
+        start_from=args.start_from,
     )

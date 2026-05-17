@@ -1,6 +1,7 @@
+import os
 from falkordb import FalkorDB
 
-db = FalkorDB(host='localhost', port=6379)
+db = FalkorDB(host=os.getenv('FALKORDB_HOST', 'localhost'), port=int(os.getenv('FALKORDB_PORT', 6379)))
 
 print(f"Graphs: {db.list_graphs()}")
 

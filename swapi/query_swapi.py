@@ -1,3 +1,4 @@
+import os
 from falkordb import FalkorDB
 import json
 
@@ -18,7 +19,7 @@ def run_query(g, query, title):
         print(f"Error: {e}")
 
 def main():
-    db = FalkorDB(host='localhost', port=6379)
+    db = FalkorDB(host=os.getenv('FALKORDB_HOST', 'localhost'), port=int(os.getenv('FALKORDB_PORT', 6379)))
     g = db.select_graph('starwars')
 
     # 1. Basic counts

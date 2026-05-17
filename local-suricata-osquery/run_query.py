@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from falkordb import FalkorDB
 from prettytable import PrettyTable
@@ -18,7 +19,7 @@ def run_query(query_file, graph_name='suricata'):
     print(f"Executing query from {query_file}:\n{'-'*40}\n{query}\n{'-'*40}")
 
     try:
-        db = FalkorDB(host='localhost', port=6379)
+        db = FalkorDB(host=os.getenv('FALKORDB_HOST', 'localhost'), port=int(os.getenv('FALKORDB_PORT', 6379)))
         graph = db.select_graph(graph_name)
         
         result = graph.query(query)

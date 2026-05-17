@@ -1,4 +1,5 @@
 import time
+import os
 from pathlib import Path
 from falkordb import FalkorDB
 from parsers import parse_suricata
@@ -8,7 +9,7 @@ SAMPLE_FILE = DATA_DIR / "sample.json"
 
 def time_test():
     try:
-        db = FalkorDB(host='localhost', port=6379)
+        db = FalkorDB(host=os.getenv('FALKORDB_HOST', 'localhost'), port=int(os.getenv('FALKORDB_PORT', 6379)))
         # We use a separate temporary graph for the timing test
         graph = db.select_graph('timing_test')
         try:

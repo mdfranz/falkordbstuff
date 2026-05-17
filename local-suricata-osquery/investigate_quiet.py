@@ -1,3 +1,4 @@
+import os
 from falkordb import FalkorDB
 from prettytable import PrettyTable
 
@@ -9,7 +10,7 @@ ips = [
     '192.168.0.31', '192.168.0.93', '192.168.50.66', '192.168.0.171'
 ]
 
-db = FalkorDB(host='localhost', port=6379)
+db = FalkorDB(host=os.getenv('FALKORDB_HOST', 'localhost'), port=int(os.getenv('FALKORDB_PORT', 6379)))
 graph = db.select_graph('suricata')
 
 query = "MATCH (ip:IPAddress)-[r:NETWORK_FLOW]->(dst:IPAddress) WHERE ip.ip IN $ips RETURN ip.ip, r.proto, dst.ip, r.bytes_toserver"
