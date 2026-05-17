@@ -158,8 +158,8 @@ cython_debug/
 .codex
 
 # Project specific
-local-suricata-osquery/*.log
-local-suricata-osquery/data/
+suricata/*.log
+suricata/data/
 
 # OS-specific files
 .DS_Store
@@ -169,3 +169,5 @@ local-suricata-osquery/data/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+*.log
