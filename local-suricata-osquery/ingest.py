@@ -63,7 +63,7 @@ def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, re
             ON CREATE SET src.name = e.src
             MERGE (dst:IPAddress {ip: e.dest})
             ON CREATE SET dst.name = e.dest
-            MERGE (src)-[r:NETWORK_FLOW {proto: e.proto}]->(dst)
+            MERGE (src)-[r:NETWORK_FLOW {proto: e.proto, port: e.dest_port}]->(dst)
             ON CREATE SET r.count = 1,
                           r.bytes_toserver = COALESCE(e.bytes_toserver, 0),
                           r.bytes_toclient = COALESCE(e.bytes_toclient, 0),

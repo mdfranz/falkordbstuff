@@ -59,6 +59,7 @@ def parse_suricata(file_path):
                         'type': 'flow',
                         'src': src_ip,
                         'dest': dest_ip,
+                        'dest_port': event.get('dest_port', 0),
                         'timestamp': event.get('timestamp'),
                         'proto': event.get('proto'),
                         'bytes_toserver': flow_data.get('bytes_toserver'),
