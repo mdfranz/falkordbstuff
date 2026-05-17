@@ -6,14 +6,15 @@ from parsers import parse_suricata, parse_osquery
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 
-def main(include_osquery=False, flow_only=False, batch_size=1000):
+def main(include_osquery=False, flow_only=False, batch_size=1000, limit=None, reset=False):
     try:
         db = FalkorDB(host='localhost', port=6379)
-        # We delete the graph to start fresh for this stage
-        try:
-            db.select_graph('suricata').delete()
-        except:
-            pass
+        if reset:
+            print("Resetting graph 'suricata'...")
+            try:
+                db.select_graph('suricata').delete()
+            except:
+                pass
         graph = db.select_graph('suricata')
     except Exception as e:
         print(f"Error connecting to FalkorDB: {e}")
@@ -35,9 +36,10 @@ def main(include_osquery=False, flow_only=False, batch_size=1000):
     suricata_files = sorted(DATA_DIR.glob('eve*.json'))
     if not suricata_files:
         print(f"No Suricata files found in {DATA_DIR}")
-    else:
-        # Limit to a single day for initial verification
-        suricata_files = [suricata_files[0]]
+        return
+    
+    if limit:
+        suricata_files = suricata_files[:limit]
     
     total_count = 0
     
@@ -130,7 +132,7 @@ def main(include_osquery=False, flow_only=False, batch_size=1000):
                 graph_obj.query(query, {'events': buffers[source]})
                 buffers[source] = []
 
-        # 5. JA4 Fingerprints — aggregate per (src, fp)
+        # 5. JA4 and Server Fingerprints
         if len(buffers['ja4']) >= batch_size or (force and buffers['ja4']):
             query = """
             UNWIND $events AS e
@@ -144,6 +146,25 @@ def main(include_osquery=False, flow_only=False, batch_size=1000):
                           r.last_seen = e.timestamp
             ON MATCH SET  r.count = r.count + 1,
                           r.last_seen = e.timestamp
+            
+            // Associate JA4 with Hostname (SNI)
+            WITH e, fp
+            WHERE e.hostname IS NOT NULL
+            MERGE (hn:Hostname {name: e.hostname})
+            MERGE (fp)-[rel:ASSOCIATED_WITH]->(hn)
+            ON CREATE SET rel.count = 1, rel.first_seen = e.timestamp, rel.last_seen = e.timestamp
+            ON MATCH SET rel.count = rel.count + 1, rel.last_seen = e.timestamp
+
+            // Associate Destination IP with Server Certificate Fingerprint
+            WITH e
+            WHERE e.server_fingerprint IS NOT NULL
+            MERGE (sfp:Fingerprint {id: e.server_fingerprint, type: 'sha1_cert'})
+            ON CREATE SET sfp.name = e.server_fingerprint
+            MERGE (dst:IPAddress {ip: e.dest})
+            ON CREATE SET dst.name = e.dest
+            MERGE (dst)-[sr:PRESENTED_FINGERPRINT]->(sfp)
+            ON CREATE SET sr.count = 1, sr.first_seen = e.timestamp, sr.last_seen = e.timestamp
+            ON MATCH SET sr.count = sr.count + 1, sr.last_seen = e.timestamp
             """
             graph_obj.query(query, {'events': buffers['ja4']})
             buffers['ja4'] = []
@@ -210,8 +231,16 @@ def parse_args():
     parser.add_argument("--include-osquery", action="store_true")
     parser.add_argument("--flow-only", action="store_true", help="Only ingest 'flow' events to build network backbone.")
     parser.add_argument("--batch-size", type=int, default=1000)
+    parser.add_argument("--limit", type=int, help="Limit the number of Suricata files to process.")
+    parser.add_argument("--reset", action="store_true", help="Delete the existing graph before ingesting.")
     return parser.parse_args()
 
 if __name__ == "__main__":
     args = parse_args()
-    main(include_osquery=args.include_osquery, flow_only=args.flow_only, batch_size=args.batch_size)
+    main(
+        include_osquery=args.include_osquery, 
+        flow_only=args.flow_only, 
+        batch_size=args.batch_size,
+        limit=args.limit,
+        reset=args.reset
+    )

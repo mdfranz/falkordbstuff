@@ -31,6 +31,9 @@ def normalize_hostname(value):
     if not value:
         return None
 
+    # Strip null bytes and non-printable characters that can break the DB parser
+    value = "".join(c for c in value if c.isprintable() and c != "\x00")
+    
     hostname = value.strip().rstrip(".").lower()
     if not hostname or is_ipv4(hostname):
         return None
@@ -130,6 +133,7 @@ def parse_suricata(file_path):
                         'hostname': normalize_hostname(tls.get('sni')),
                         'version': tls.get('version'),
                         'ja4': tls.get('ja4'),
+                        'server_fingerprint': tls.get('fingerprint'),
                         'timestamp': event.get('timestamp')
                     }
                 elif event_type == 'quic':
